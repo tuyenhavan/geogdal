@@ -1,0 +1,4 @@
+# Ignore the following folders and files
+/tests/ 
+/notebooks/
+/src/geogdal/__pycached__/
