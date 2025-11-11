@@ -1,5 +1,6 @@
 # Ignore the following folders and files
 /tests/ 
 /notebooks/
-__pycached__/
-*.pyc
+src/geogdal/__pycache__/
+*.py[cod]
+*$py.class
