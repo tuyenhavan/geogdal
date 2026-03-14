@@ -19,7 +19,7 @@ def merge_raster(file_list, outpath, xres=10, yres=10, resample="bilinear"):
     """
 
     gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
-    # os.environ['GTIFF_SRS_SOURCE'] = 'EPSG'
+    os.environ['GTIFF_SRS_SOURCE'] = 'EPSG'
 
     folder = os.path.dirname(outpath)
     vrt = gdal.BuildVRT(os.path.join(folder, "temp.vrt"), file_list)

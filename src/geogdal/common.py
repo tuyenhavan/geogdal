@@ -20,3 +20,19 @@ def list_files(path, ext=None):
                 if ext is None:
                     flist.append(file)
     return sorted(flist)
+
+
+def delete_files(path):
+    """
+    Delete all files in a directory.
+
+    Args:
+        path (str): The path to the directory containing files to be deleted.
+    Returns:
+        None
+    """
+    if not os.path.isdir(path):
+        raise ValueError(f"The provided path '{path}' is not a valid directory.")
+    for root, _, files in os.walk(path):
+        for file in files:
+            os.remove(os.path.join(root, file))
