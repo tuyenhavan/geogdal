@@ -17,9 +17,26 @@ def merge_raster(file_list, outpath, xres=10, yres=10, resample="bilinear"):
     Returns:
         None
     """
-
+    if resample == "nearest":
+        resample = "near"
+    resample_list = [
+        "bilinear",
+        "near",
+        "cubic",
+        "cubicspline",
+        "average",
+        "mode",
+        "max",
+        "min",
+        "med",
+        "q1",
+        "q3",
+        "sum",
+    ]
+    if resample not in resample_list:
+        raise ValueError(f"Please select the follow methods {resample_list}")
     gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
-    os.environ['GTIFF_SRS_SOURCE'] = 'EPSG'
+    os.environ["GTIFF_SRS_SOURCE"] = "EPSG"
 
     folder = os.path.dirname(outpath)
     vrt = gdal.BuildVRT(os.path.join(folder, "temp.vrt"), file_list)

@@ -15,10 +15,10 @@ def list_files(path, ext=None):
     for dir, _, files in os.walk(path):
         for file in files:
             if file.endswith(ext):
-                flist.append(file)
+                flist.append(os.path.join(dir, file))
             else:
                 if ext is None:
-                    flist.append(file)
+                    flist.append(os.path.join(dir, file))
     return sorted(flist)
 
 
