@@ -3,20 +3,39 @@ import os
 import geopandas as gpd
 from osgeo import gdal
 from shapely.geometry import box
+gdal.UseExceptions()
 
 
-def merge_raster(file_list, outpath, xres=10, yres=10, resample="bilinear"):
+def _to_gdal_type(dtype):
+    """Convert a type name like 'Float32' to a GDAL constant."""
+    if isinstance(dtype, int):
+        return dtype  # already a GDAL constant (e.g. gdal.GDT_Float32)
+    code = gdal.GetDataTypeByName(dtype)
+    if code == gdal.GDT_Unknown:
+        raise ValueError(f"Unknown dtype: {dtype!r}")
+    return code
+
+
+def merge_raster(file_list, outfile, xres=None, yres=None, resample="bilinear", crs=None, nodata=None, dtype="Float32"):
     """Merge raster files into a single raster file.
     Args:
         file_list (list): List of input raster file paths.
-        outpath (str): Output raster file path.
-        xres (float, optional): Output raster x resolution. Defaults to 10.
-        yres (float, optional): Output raster y resolution. Defaults to 10.
+        outfile (str): Output raster file path.
+        xres (float, optional): Output raster x resolution. Defaults to None.
+        yres (float, optional): Output raster y resolution. Defaults to None.
         resample (str, optional): Resampling method. Defaults to "bilinear".
             Options include "nearest", "bilinear", "cubic", etc.
+        crs (str, optional): Target CRS, e.g. "EPSG:32630". Defaults to None.
+        nodata (float, optional): Nodata value for source and output. Defaults to None.
+        dtype (str, optional): Output data type, e.g. "Float32", "Float64", "Int16", "UInt16", "Byte". Defaults to "Float32".
     Returns:
         None
     """
+    if not isinstance(file_list, list):
+        raise TypeError("file_list must be a list of raster file paths.")
+    if not isinstance(outfile, str):
+        raise TypeError(
+            "outfile must be a string representing the output file path.")
     if resample == "nearest":
         resample = "near"
     resample_list = [
@@ -37,24 +56,67 @@ def merge_raster(file_list, outpath, xres=10, yres=10, resample="bilinear"):
         raise ValueError(f"Please select the follow methods {resample_list}")
     gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
     os.environ["GTIFF_SRS_SOURCE"] = "EPSG"
+    if not outfile.lower().endswith(".tif"):
+        outfile += ".tif"
+    opts = {
+        "format": "GTiff",
+        "creationOptions": ["COMPRESS=LZW", "TILED=YES", "BIGTIFF=YES"],
+        "resampleAlg": resample,
+        "multithread": True,
+    }
+    if xres is not None:
+        opts["xRes"] = xres
+    if yres is not None:
+        opts["yRes"] = yres
+    if crs is not None:
+        opts["dstSRS"] = crs
+    if nodata is not None:
+        opts["dstNodata"] = nodata
+    if dtype is not None:
+        opts["outputType"] = _to_gdal_type(dtype)
+    ds = gdal.Warp(outfile, file_list, **opts)
+    if ds is not None:
+        ds = None
 
-    folder = os.path.dirname(outpath)
-    vrt = gdal.BuildVRT(os.path.join(folder, "temp.vrt"), file_list)
-    if os.path.basename(outpath).endswith(".tif"):
-        gdal.Translate(
-            outpath,
-            vrt,
-            format="GTiff",
-            creationOptions=["COMPRESS=LZW", "TILED=YES", "BIGTIFF=YES"],
-            xRes=xres,
-            yRes=yres,
-            resampleAlg=resample,
-        )
-        vrt = None
-        if os.path.exists(os.path.join(folder, "temp.vrt")):
-            os.remove(os.path.join(folder, "temp.vrt"))
-    else:
-        print("Output should be a .tif file!")
+
+def merge_raster_without_specific_resolution(file_list, outfile):
+    """Merge raster files into a single GeoTIFF.
+    All rasters must have the same CRS, resolution, and grid alignment.
+    Args:
+        file_list (list): List of input raster file paths.
+        outfile (str): Output raster file path.
+    Returns:
+        None
+    """
+    if not isinstance(file_list, list):
+        raise TypeError("file_list must be a list of raster file paths.")
+    if not isinstance(outfile, str):
+        raise TypeError(
+            "outfile must be a string representing the output file path.")
+    # check if the file ends with tif
+    if not outfile.lower().endswith(".tif"):
+        outfile += ".tif"
+    gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
+
+    folder = os.path.dirname(outfile)
+    vrt_path = os.path.join(folder, "temp.vrt")
+
+    vrt = gdal.BuildVRT(vrt_path, file_list)
+
+    gdal.Translate(
+        outfile,
+        vrt,
+        format="GTiff",
+        creationOptions=[
+            "COMPRESS=LZW",
+            "TILED=YES",
+            "BIGTIFF=YES",
+        ],
+    )
+
+    vrt = None
+    if os.path.exists(vrt_path):
+        os.remove(vrt_path)
 
 
 def generate_grids_from_aoi(gdf, ncols=4, nrows=2, predicate="intersects"):
@@ -63,13 +125,12 @@ def generate_grids_from_aoi(gdf, ncols=4, nrows=2, predicate="intersects"):
     and add a column to the original GeoDataFrame indicating
     which grid cell (part) each feature belongs to.
 
-    Parameters
-    ----------
+    Args:
     gdf : GeoDataFrame
         Input GeoDataFrame with geometries.
-    nx : int, default=4
+    ncols : int, default=4
         Number of columns (horizontal divisions).
-    ny : int, default=2
+    nrows : int, default=2
         Number of rows (vertical divisions).
     predicate : str, default="intersects"
         Spatial join predicate ("intersects", "within", "contains", etc.)
@@ -106,7 +167,8 @@ def generate_grids_from_aoi(gdf, ncols=4, nrows=2, predicate="intersects"):
             tiles.append(box(x0, y0, x1, y1))
             names.append(f"zone_{j*ncols + i + 1}")
 
-    tiles_gdf = gpd.GeoDataFrame({"zones": names, "geometry": tiles}, crs=gdf.crs)
+    tiles_gdf = gpd.GeoDataFrame(
+        {"zones": names, "geometry": tiles}, crs=gdf.crs)
 
     # 4. Spatial join: assign zone name to each feature
     joined = gpd.sjoin(
