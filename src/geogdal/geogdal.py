@@ -190,3 +190,63 @@ def generate_grids_from_aoi(gdf, ncols=4, nrows=2, predicate="intersects"):
     gdf_with_zones[new_col_name] = gdf_with_zones.index.map(index_to_zones)
 
     return gdf_with_zones
+
+
+def resample_raster(input_file, out_file, xres=None, yres=None, resample='bilinear',
+                    out_crs=None, nodata=None, dtype=None):
+    """Resample a raster file to a new resolution and optionally reproject it.
+    Args:
+        input_file (str): Path to the input raster file.
+        out_file (str): Path to the output resampled raster file.
+        xres (float, optional): Target resolution in the x direction. Default is None (use original resolution).
+        yres (float, optional): Target resolution in the y direction. Default is None (use original resolution).
+        resample (str, optional): Resampling method ('nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average', 'mode', 'max', 'min', 'med', 'q1', 'q3', etc.). Default is 'bilinear'.
+        out_crs (str or CRS, optional): Target coordinate reference system. Default is None (no reprojection).
+        nodata (float, optional): Value to use for nodata. Default is None.
+        dtype (str, optional): Data type for the output raster. Default is None.
+
+    Returns:
+        None
+    """
+    if resample == 'nearest':
+        resample = 'near'
+    dtype_map = {
+        'uint8': gdal.GDT_Int8,
+        'int16': gdal.GDT_Int16,
+        'uint16': gdal.GDT_UInt16,
+        'int32': gdal.GDT_Int32,
+        'uint32': gdal.GDT_UInt32,
+        'float32': gdal.GDT_Float32,
+        'float64': gdal.GDT_Float64
+    }
+    if dtype is not None and dtype not in dtype_map:
+        raise ValueError(
+            f"Unsupported dtype: {dtype}. Supported dtypes are: {list(dtype_map.keys())}")
+    resample_list = ['near', 'bilinear', 'cubic', 'cubicspline',
+                     'lanczos', 'average', 'mode', 'max', 'min', 'med', 'q1', 'q3']
+    if resample not in resample_list:
+        raise ValueError(
+            f"Unsupported resample method: {resample}. Supported methods are: {resample_list}")
+    options = {
+        "resampleAlg": resample,
+        "multithread": True,
+        "format": "GTiff",
+        "creationOptions": ["COMPRESS=LZW", "TILED=YES", "BIGTIFF=YES"]
+    }
+
+    if xres is not None:
+        options["xRes"] = xres
+    if yres is not None:
+        options["yRes"] = yres
+    if out_crs is not None:
+        options["dstSRS"] = out_crs if isinstance(
+            out_crs, str) else out_crs.to_wkt()
+    if nodata is not None:
+        options["dstNodata"] = nodata
+    if dtype is not None:
+        options["outputType"] = dtype_map[dtype]
+    ds = gdal.Warp(out_file, input_file, options=gdal.WarpOptions(**options))
+    if ds is None:
+        raise RuntimeError(
+            f"Failed to resample raster: {input_file} to {out_file}")
+    ds = None
